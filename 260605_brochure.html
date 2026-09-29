@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#071b34" />
+  <title>팜페이 브로셔</title>
+  <style>
+    *{box-sizing:border-box}
+    html,body{margin:0;width:100%;height:100%;background:#071b34;color:#fff;font-family:Arial,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;overflow:hidden}
+    button{font:inherit}
+    .viewer{position:relative;width:100%;height:100dvh;min-height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 30%,#17365c 0,#071b34 58%,#031020 100%);user-select:none;-webkit-user-select:none}
+    .stage{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:18px 76px 58px;touch-action:pan-y pinch-zoom;cursor:grab}
+    .stage.dragging{cursor:grabbing}
+    .spread{display:flex;align-items:center;justify-content:center;gap:3px;max-width:100%;max-height:100%;filter:drop-shadow(0 12px 28px rgba(0,0,0,.35))}
+    .page{display:block;max-height:calc(100dvh - 82px);max-width:calc((100vw - 170px)/2);width:auto;height:auto;object-fit:contain;background:#fff}
+    .spread.single .page{max-width:min(90vw,900px)}
+    .nav{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:64px;border:0;border-radius:14px;background:rgba(0,0,0,.34);color:#fff;font-size:34px;line-height:1;display:grid;place-items:center;cursor:pointer;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);transition:.15s}
+    .nav:hover{background:rgba(0,0,0,.52);transform:translateY(-50%) scale(1.04)}
+    .nav:disabled{opacity:.18;cursor:default;transform:translateY(-50%)}
+    .prev{left:16px}.next{right:16px}
+    .toolbar{position:absolute;left:50%;bottom:max(12px,env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:999px;background:rgba(0,0,0,.40);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-size:13px;white-space:nowrap}
+    .counter{min-width:66px;text-align:center;font-variant-numeric:tabular-nums}
+    .toolbtn{border:0;border-radius:999px;background:rgba(255,255,255,.13);color:#fff;padding:7px 10px;cursor:pointer}
+    .hint{opacity:.72}
+    .loading{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;color:rgba(255,255,255,.75);font-size:14px}
+    @media (max-width:899px){
+      .stage{padding:10px 8px 58px}
+      .spread{width:100%;height:100%}
+      .page,.spread.single .page{max-width:100%;max-height:calc(100dvh - 72px);width:auto;height:auto}
+      .nav{width:40px;height:54px;font-size:28px;background:rgba(0,0,0,.26)}
+      .prev{left:6px}.next{right:6px}
+      .toolbar{font-size:12px;padding:7px 10px}
+      .hint{display:none}
+    }
+    @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <main class="viewer" aria-label="팜페이 브로셔 뷰어">
+    <div class="stage" id="stage" aria-live="polite">
+      <div class="spread single" id="spread"></div>
+    </div>
+    <button class="nav prev" id="prev" type="button" aria-label="이전 페이지">&#8249;</button>
+    <button class="nav next" id="next" type="button" aria-label="다음 페이지">&#8250;</button>
+    <div class="toolbar">
+      <span class="hint">← → / 드래그 · 스와이프</span>
+      <span class="counter" id="counter">1 / 16</span>
+      <button class="toolbtn" id="fullscreen" type="button" aria-label="전체 화면">전체화면</button>
+    </div>
+    <div class="loading" id="loading">브로셔 불러오는 중…</div>
+  </main>
+
+<script>
+(() => {
+  const TOTAL = 16;
+  const src = n => `images/page_${String(n).padStart(2,'0')}.jpg`;
+  const stage = document.getElementById('stage');
+  const spread = document.getElementById('spread');
+  const prevBtn = document.getElementById('prev');
+  const nextBtn = document.getElementById('next');
+  const counter = document.getElementById('counter');
+  const loading = document.getElementById('loading');
+  const fullscreenBtn = document.getElementById('fullscreen');
+
+  let groups = [];
+  let index = 0;
+  let currentPage = Math.max(1, Math.min(TOTAL, Number(location.hash.replace('#p','')) || 1));
+
+  function isMobile(){ return window.matchMedia('(max-width: 899px)').matches; }
+  function buildGroups(){
+    if (isMobile()) return Array.from({length:TOTAL},(_,i)=>[i+1]);
+    const g = [[1]];
+    for(let p=2;p<=15;p+=2) g.push([p,p+1]);
+    g.push([16]);
+    return g;
+  }
+  function indexForPage(page){
+    const i = groups.findIndex(g => g.includes(page));
+    return i < 0 ? 0 : i;
+  }
+  function preload(pages){
+    pages.forEach(p => { const im = new Image(); im.src = src(p); });
+  }
+  function render(pushHash=true){
+    const pages = groups[index];
+    currentPage = pages[0];
+    spread.className = `spread ${pages.length===1?'single':''}`;
+    spread.replaceChildren(...pages.map(p => {
+      const img=document.createElement('img');
+      img.className='page'; img.src=src(p); img.alt=`팜페이 브로셔 ${p}페이지`;
+      img.draggable=false;
+      img.addEventListener('load',()=>loading.style.display='none',{once:true});
+      return img;
+    }));
+    counter.textContent = pages.length===1 ? `${pages[0]} / ${TOTAL}` : `${pages[0]}–${pages[1]} / ${TOTAL}`;
+    prevBtn.disabled = index===0;
+    nextBtn.disabled = index===groups.length-1;
+    if(pushHash) history.replaceState(null,'',`#p${pages[0]}`);
+    const near=[];
+    if(groups[index-1]) near.push(...groups[index-1]);
+    if(groups[index+1]) near.push(...groups[index+1]);
+    preload(near);
+  }
+  function go(delta){
+    const next=Math.max(0,Math.min(groups.length-1,index+delta));
+    if(next===index) return;
+    index=next; render();
+  }
+  function rebuild(){
+    const remembered=currentPage;
+    groups=buildGroups(); index=indexForPage(remembered); render(false);
+  }
+
+  groups=buildGroups(); index=indexForPage(currentPage); render(false);
+  prevBtn.addEventListener('click',()=>go(-1));
+  nextBtn.addEventListener('click',()=>go(1));
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowLeft'||e.key==='PageUp') go(-1);
+    if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' ') { e.preventDefault(); go(1); }
+    if(e.key==='Home'){index=0;render();}
+    if(e.key==='End'){index=groups.length-1;render();}
+  });
+
+  let startX=0,startY=0,tracking=false;
+  stage.addEventListener('pointerdown',e=>{
+    if(e.pointerType==='mouse' && e.button!==0) return;
+    tracking=true; startX=e.clientX; startY=e.clientY; stage.classList.add('dragging');
+    try{stage.setPointerCapture(e.pointerId)}catch(_){ }
+  });
+  stage.addEventListener('pointerup',e=>{
+    if(!tracking) return; tracking=false; stage.classList.remove('dragging');
+    const dx=e.clientX-startX, dy=e.clientY-startY;
+    if(Math.abs(dx)>55 && Math.abs(dx)>Math.abs(dy)*1.15) go(dx<0?1:-1);
+  });
+  stage.addEventListener('pointercancel',()=>{tracking=false;stage.classList.remove('dragging')});
+
+  fullscreenBtn.addEventListener('click',async()=>{
+    try{
+      if(!document.fullscreenElement) await document.documentElement.requestFullscreen();
+      else await document.exitFullscreen();
+    }catch(_){ }
+  });
+  window.addEventListener('resize',()=>{
+    clearTimeout(window.__r); window.__r=setTimeout(rebuild,120);
+  });
+})();
+</script>
+</body>
+</html>
